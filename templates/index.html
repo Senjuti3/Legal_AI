@@ -5,32 +5,198 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Legal AI Assistant</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; margin: 0; padding: 2rem; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        h1 { color: #1e293b; margin-top: 0; }
-        textarea { width: 100%; height: 120px; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
-        button { margin-top: 1rem; padding: 0.75rem 1.5rem; background-color: #2563eb; color: white; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
-        button:hover { background-color: #1d4ed8; }
-        #output-box { margin-top: 2rem; padding: 1rem; background: #f1f5f9; border-radius: 6px; white-space: pre-wrap; font-family: monospace; display: none; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background-color: #f1f5f9; 
+            margin: 0; 
+            padding: 2rem; 
+            color: #1e293b; 
+        }
+        .container { 
+            max-width: 860px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 2.5rem; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08); 
+        }
+        h1 { 
+            color: #0f172a; 
+            margin-top: 0; 
+            margin-bottom: 0.5rem; 
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .subtitle { 
+            color: #64748b; 
+            margin-bottom: 1.5rem; 
+            font-size: 1.05rem;
+        }
+        .label-text {
+            font-weight: 600; 
+            display: block; 
+            margin-bottom: 0.5rem; 
+            color: #334155;
+            font-size: 1rem;
+        }
+        textarea { 
+            width: 100%; 
+            height: 130px; 
+            padding: 1rem; 
+            border: 1.5px solid #cbd5e1; 
+            border-radius: 8px; 
+            box-sizing: border-box; 
+            font-size: 1rem; 
+            font-family: inherit; 
+            resize: vertical; 
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        textarea:focus { 
+            outline: none; 
+            border-color: #2563eb; 
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .btn { 
+            margin-top: 1rem; 
+            padding: 0.8rem 1.8rem; 
+            background-color: #2563eb; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            font-size: 1rem; 
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: background 0.2s; 
+        }
+        .btn:hover { 
+            background-color: #1d4ed8; 
+        }
+        .btn:disabled { 
+            background-color: #94a3b8; 
+            cursor: not-allowed; 
+        }
+        #result-box { 
+            margin-top: 2rem; 
+            padding: 1.5rem; 
+            background: #f8fafc; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 8px; 
+            display: none; 
+        }
+        #result-box h3 { 
+            margin-top: 0; 
+            color: #1e293b; 
+            border-bottom: 2px solid #e2e8f0; 
+            padding-bottom: 0.5rem; 
+        }
+        .status-badge { 
+            display: inline-block; 
+            padding: 0.25rem 0.6rem; 
+            border-radius: 4px; 
+            font-size: 0.8rem; 
+            font-weight: 500; 
+            margin-bottom: 1rem; 
+            background: #e0f2fe; 
+            color: #0369a1; 
+        }
+        .result-content {
+            margin-top: 0.5rem;
+        }
+        .result-line { 
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.6rem;
+            background: #ffffff;
+            border-left: 4px solid #2563eb;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #1e293b;
+        }
+        .result-line strong {
+            color: #0f172a;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Legal AI Assistant</h1>
-        <p>Enter your legal issue or problem below:</p>
-        <textarea id="problem" placeholder="Describe your legal problem in plain language..."></textarea>
+        <h1>⚖️ Legal AI Assistant</h1>
+        <p class="subtitle">Describe your legal problem in plain language to receive legal guidance and applicable laws.</p>
+        
+        <label for="problem" class="label-text">Legal Problem:</label>
+        <textarea id="problem" placeholder="Example: I paid a neighbour Rs. 4,500 in advance for loan processing, but the work was left incomplete and they stopped responding. I am not sure what steps to take next."></textarea>
+        
         <br>
-        <button onclick="submitProblem()">Get Legal Analysis</button>
-        <div id="output-box"></div>
+        <button id="submitBtn" class="btn" onclick="submitProblem()">Get Legal Resolution</button>
+        
+        <div id="result-box">
+            <span class="status-badge" id="statusBadge">Complete</span>
+            <h3>Legal Resolution</h3>
+            <div id="resultContent" class="result-content"></div>
+        </div>
     </div>
 
     <script>
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // When the '/' or '|' comes, format each item onto a separate line
+        function formatResult(rawText) {
+            if (!rawText) return "";
+            
+            // Normalize separators: split on '/' or '|'
+            let delimiterPattern = /\s*[/|]\s*/;
+            let segments = [];
+
+            if (delimiterPattern.test(rawText)) {
+                segments = rawText.split(delimiterPattern);
+            } else if (rawText.includes("\n")) {
+                segments = rawText.split("\n");
+            } else {
+                segments = [rawText];
+            }
+
+            segments = segments.map(s => s.trim()).filter(s => s.length > 0);
+
+            return segments.map(segment => {
+                // If the segment has a label like 'Law: ...' or 'Section: ...', highlight the label
+                const colonIdx = segment.indexOf(":");
+                if (colonIdx > 0 && colonIdx < 35) {
+                    const label = segment.substring(0, colonIdx).trim();
+                    const value = segment.substring(colonIdx + 1).trim();
+                    return `<div class="result-line"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`;
+                }
+                return `<div class="result-line">${escapeHtml(segment)}</div>`;
+            }).join("");
+        }
+
         async function submitProblem() {
             const problem = document.getElementById("problem").value;
-            const outputBox = document.getElementById("output-box");
-            if (!problem.trim()) return alert("Please enter a legal problem.");
-            outputBox.style.display = "block";
-            outputBox.innerText = "Analyzing legal problem...";
+            const resultBox = document.getElementById("result-box");
+            const resultContent = document.getElementById("resultContent");
+            const submitBtn = document.getElementById("submitBtn");
+            const statusBadge = document.getElementById("statusBadge");
+
+            if (!problem.trim()) {
+                alert("Please describe your legal problem.");
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Analyzing...";
+            resultBox.style.display = "block";
+            statusBadge.innerText = "Processing";
+            statusBadge.style.background = "#fef3c7";
+            statusBadge.style.color = "#92400e";
+            resultContent.innerHTML = "<div class='result-line'>Analyzing legal problem...</div>";
+
             try {
                 const res = await fetch("/solve/", {
                     method: "POST",
@@ -38,9 +204,21 @@
                     body: JSON.stringify({ problem: problem })
                 });
                 const data = await res.json();
-                outputBox.innerText = data.output;
+                
+                statusBadge.innerText = "Complete";
+                statusBadge.style.background = "#dcfce7";
+                statusBadge.style.color = "#166534";
+
+                const responseText = data.solution || data.output || data.error || "No response received";
+                resultContent.innerHTML = formatResult(responseText);
             } catch (err) {
-                outputBox.innerText = "Error: " + err.message;
+                statusBadge.innerText = "Error";
+                statusBadge.style.background = "#fee2e2";
+                statusBadge.style.color = "#991b1b";
+                resultContent.innerHTML = `<div class="result-line">Server or network error: ${escapeHtml(err.message)}</div>`;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Get Legal Resolution";
             }
         }
     </script>

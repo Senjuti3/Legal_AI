@@ -12,28 +12,56 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 # =====================================================================
-# CONFIGURATION & API KEY (Set your manual keys here if needed)
+# CONFIGURATION
 # =====================================================================
-HF_TOKEN = ""  # Enter your Hugging Face API key/token here (optional)
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 
-if HF_TOKEN:
-    os.environ["HF_TOKEN"] = HF_TOKEN
-
-app = FastAPI(title="Legal AI Assistant", description="Legal problem resolution using fine-tuned T5", version="1.0")
+app = FastAPI(
+    title="Legal AI Assistant",
+    description="Legal problem resolution using fine-tuned T5",
+    version="1.0"
+)
 
 MODEL_PATH = os.getenv("MODEL_PATH", "./saved_legal_model")
 
-# If local model not trained yet, fallback to base model
-if not os.path.exists(os.path.join(MODEL_PATH, "config.json")):
-    print(f"Warning: Local model at '{MODEL_PATH}' not found. Using 't5-small' base model for now.")
+def check_model_weights(path: str) -> bool:
+    """Check if model weights exist locally or if it's a Hugging Face repo ID."""
+    if not os.path.exists(path):
+        return False
+    if os.path.isdir(path):
+        has_weights = any(
+            os.path.isfile(os.path.join(path, f))
+            for f in ["model.safetensors", "pytorch_model.bin"]
+        )
+        return has_weights
+    return True
+
+# Check if local model has actual trained weights
+if not check_model_weights(MODEL_PATH):
+    print("=" * 70)
+    print(f"[WARNING] Local directory '{MODEL_PATH}' does not contain model weights!")
+    print("  Found config files, but 'model.safetensors' or 'pytorch_model.bin' is missing.")
+    print("  (GitHub web upload rejects files >25MB, so weights must be copied directly).")
+    print("  Falling back to 't5-small' so the server can run without crashing.")
+    print("=" * 70)
     MODEL_PATH = "t5-small"
 
 torch.set_grad_enabled(False)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
-tokenizer = T5Tokenizer.from_pretrained(MODEL_PATH)
+# Load Tokenizer with graceful fallback
+try:
+    tokenizer = T5Tokenizer.from_pretrained(MODEL_PATH)
+except Exception:
+    print("Local tokenizer not found, loading 't5-small' tokenizer...")
+    tokenizer = T5Tokenizer.from_pretrained("t5-small")
+
+# Load Model
+print(f"Loading model from '{MODEL_PATH}'...")
 model = T5ForConditionalGeneration.from_pretrained(MODEL_PATH)
 model.to(device)
+model.eval()
 gc.collect()
 
 # Setup templates and static directory if present
@@ -49,14 +77,14 @@ def clean_data(text: str) -> str:
     text = re.sub(r"\r\n", " ", str(text))
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"<.*?>", " ", text)
+    text = re.sub(r"^(legal\s+)?problem:\s*", "", text, flags=re.IGNORECASE)
     return text.strip()
 
 def solve_legal_problem(problem: str) -> str:
     cleaned = clean_data(problem)
-    input_text = "legal problem: " + cleaned
 
     inputs = tokenizer(
-        input_text,
+        cleaned,
         padding="max_length",
         max_length=128,
         truncation=True,
@@ -68,6 +96,8 @@ def solve_legal_problem(problem: str) -> str:
         attention_mask=inputs["attention_mask"],
         max_length=384,
         num_beams=4,
+        no_repeat_ngram_size=3,
+        repetition_penalty=1.2,
         early_stopping=True
     )
 
@@ -77,8 +107,13 @@ def solve_legal_problem(problem: str) -> str:
 # API endpoints
 @app.post("/solve/")
 async def solve(data: LegalProblemInput):
-    solution = solve_legal_problem(data.problem)
-    return {"problem": data.problem, "output": solution}
+    try:
+        if not data.problem.strip():
+            return {"problem": data.problem, "output": "Please enter a valid legal problem description."}
+        solution = solve_legal_problem(data.problem)
+        return {"problem": data.problem, "solution": solution, "output": solution}
+    except Exception as e:
+        return {"problem": data.problem, "error": str(e), "solution": f"Error during generation: {e}", "output": f"Error during generation: {e}"}
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -86,3 +121,12 @@ async def home(request: Request):
     if os.path.exists(index_file):
         return templates.TemplateResponse(request=request, name="index.html", context={})
     return HTMLResponse("<h2>Legal AI Assistant API is running! Visit /docs for the API UI.</h2>")
+
+@app.get("/status/")
+async def status():
+    return {
+        "status": "ready",
+        "model_loaded": MODEL_PATH,
+        "device": str(device),
+        "has_weights": check_model_weights("./saved_legal_model")
+    }

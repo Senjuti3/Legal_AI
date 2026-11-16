@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import torch
 import pandas as pd
 from datasets import Dataset
@@ -14,7 +15,8 @@ from transformers import (
 # =====================================================================
 # CONFIGURATION & API KEY (Set your manual keys here if needed)
 # =====================================================================
-HF_TOKEN = "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"  # Enter your Hugging Face API key/token here (optional)
+HF_TOKEN = ""          # Enter your Hugging Face API key/token here (optional)
+HF_REPO_NAME = ""      # e.g., "Senjuti3/legal-t5-assistant" to push directly to HF Hub
 
 if HF_TOKEN:
     os.environ["HF_TOKEN"] = HF_TOKEN
@@ -22,9 +24,9 @@ if HF_TOKEN:
 MODEL_NAME = "t5-small"
 OUTPUT_DIR = "./saved_legal_model"
 TRAIN_FILE = "data/train_data.csv"
-VAL_FILE = "data/val_data.csv"
+VAL_FILE = "data/val_data.csv" if os.path.exists("data/val_data.csv") else "data/val_data_split.csv"
 
-# Hyperparameters
+# Hyperparameters (Column i = problem -> Column j = solution)
 MAX_INPUT_LENGTH = 128
 MAX_TARGET_LENGTH = 384
 BATCH_SIZE = 8
@@ -52,7 +54,7 @@ def clean_data(text):
 tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME)
 
 def tokenize_batch(batch):
-    # Clean and tokenize user inputs (problems)
+    # Clean and tokenize user inputs (problems) and targets (solutions)
     inputs = [clean_data(text) for text in batch["input_text"]]
     targets = [clean_data(text) for text in batch["target_text"]]
 
@@ -83,9 +85,12 @@ def tokenize_batch(batch):
 # 3. LOAD DATA & TRAIN
 # =====================================================================
 def main():
-    print("Loading datasets...")
+    print(f"Loading datasets from {TRAIN_FILE} and {VAL_FILE}...")
     train_df = pd.read_csv(TRAIN_FILE)
     val_df = pd.read_csv(VAL_FILE)
+
+    print("Sample Input (Column i):", train_df["input_text"].iloc[0])
+    print("Sample Target (Column j):", train_df["target_text"].iloc[0])
 
     train_dataset = Dataset.from_pandas(train_df[["input_text", "target_text"]])
     val_dataset = Dataset.from_pandas(val_df[["input_text", "target_text"]])
@@ -129,8 +134,21 @@ def main():
     trainer.train()
 
     print(f"Saving fine-tuned model and tokenizer to '{OUTPUT_DIR}'...")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     model.save_pretrained(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
+    
+    # Create a zip archive for easy download from Google Colab / Kaggle
+    zip_path = shutil.make_archive("saved_legal_model", "zip", OUTPUT_DIR)
+    print(f"Created archive: {zip_path}")
+
+    # Optional: Push directly to Hugging Face Hub (avoids GitHub 25MB file size limit)
+    if HF_REPO_NAME and HF_TOKEN:
+        print(f"Pushing model and tokenizer to Hugging Face repository '{HF_REPO_NAME}'...")
+        model.push_to_hub(HF_REPO_NAME, token=HF_TOKEN)
+        tokenizer.push_to_hub(HF_REPO_NAME, token=HF_TOKEN)
+        print("Pushed to Hugging Face Hub successfully!")
+
     print("Model training and saving complete!")
 
 if __name__ == "__main__":
